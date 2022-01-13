@@ -59,9 +59,9 @@ public class App {
     void setPubSubProject(String value);
 
     @Description("Pubsub subscription")
-    String getInputTopic();
+    String getSubscription();
 
-    void setInputTopic(String inputTopic);
+    void setSubscription(String value);
   }
 
       /** The log to output status messages to. */
@@ -109,7 +109,7 @@ public class App {
                                                   .withValidation()
                                                   .as(MyOptions.class);
         Pipeline p = Pipeline.create(options);
-        final String TOPIC = String.format("projects/%s/topics/%s", options.getPubSubProject(), options.getInputTopic());
+        final String SUBSCRIPTION = String.format("projects/%s/subscriptions/%s", options.getPubSubProject(), options.getSubscription());
 
         final int STORAGE_LOAD_INTERVAL = 1; // minutes
         final int STORAGE_NUM_SHARDS = 1;
@@ -121,7 +121,7 @@ public class App {
 
         // 1. Read from PubSub
         PCollection<String> pubsubMessages = p
-                .apply("ReadPubSubSubscription", PubsubIO.readStrings().fromTopic(TOPIC));
+                .apply("ReadPubSubSubscription", PubsubIO.readStrings().fromTopic(SUBSCRIPTION));
 
         // 2. Count PubSub Data
         pubsubMessages.apply("CountPubSubData", ParDo.of(new DoFn<String, String>() {
