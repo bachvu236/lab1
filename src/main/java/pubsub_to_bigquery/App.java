@@ -121,7 +121,7 @@ public class App {
 
         // 1. Read from PubSub
         PCollection<String> pubsubMessages = p
-                .apply("ReadPubSubSubscription", PubsubIO.readStrings().fromTopic(SUBSCRIPTION));
+                .apply("ReadPubSubSubscription", PubsubIO.readStrings().fromSubscription(SUBSCRIPTION));
 
         // 2. Count PubSub Data
         pubsubMessages.apply("CountPubSubData", ParDo.of(new DoFn<String, String>() {
