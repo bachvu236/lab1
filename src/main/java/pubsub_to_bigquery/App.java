@@ -109,7 +109,7 @@ public class App {
                                                   .withValidation()
                                                   .as(MyOptions.class);
         Pipeline p = Pipeline.create(options);
-        options.setJobName("uc_1_8");
+        options.setJobName("uc1-8-"+System.currentTimeMillis());
         final String TOPIC = String.format("projects/%s/topics/%s", options.getPubSubProject(), options.getInputTopic());
 
         final int STORAGE_LOAD_INTERVAL = 1; // minutes
