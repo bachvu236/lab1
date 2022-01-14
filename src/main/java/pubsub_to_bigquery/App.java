@@ -6,8 +6,10 @@ package pubsub_to_bigquery;
 import org.apache.beam.runners.dataflow.options.DataflowPipelineOptions;
 //import org.apache.beam.runners.direct.DirectOptions;
 import org.apache.beam.sdk.Pipeline;
+import org.apache.beam.sdk.coders.StringUtf8Coder;
 import org.apache.beam.sdk.io.Compression;
 import org.apache.beam.sdk.io.FileIO;
+import org.apache.beam.sdk.io.TextIO;
 import org.apache.beam.sdk.io.gcp.bigquery.*;
 import org.apache.beam.sdk.io.gcp.pubsub.PubsubIO;
 import org.apache.beam.sdk.options.Description;
@@ -17,8 +19,10 @@ import org.apache.beam.sdk.transforms.*;
 import org.apache.beam.sdk.transforms.windowing.*;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
+import org.apache.beam.sdk.values.PCollectionList;
 import org.apache.beam.sdk.values.PCollectionTuple;
 import org.joda.time.DateTime;
+import org.joda.time.Duration;
 import org.joda.time.format.DateTimeFormat;
 import org.joda.time.format.DateTimeFormatter;
 import org.slf4j.Logger;
@@ -26,8 +30,10 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Objects;
 
+import static org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO.Write.CreateDisposition.CREATE_IF_NEEDED;
 import static org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO.Write.CreateDisposition.CREATE_NEVER;
 import static org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO.Write.WriteDisposition.WRITE_APPEND;
+import static pubsub_to_bigquery.TransformToBQ.FAILURE_TAG;
 import static pubsub_to_bigquery.TransformToBQ.SUCCESS_TAG;
 
 public class App {
@@ -47,6 +53,10 @@ public class App {
 
     String getErrorsBucket();
     void setErrorsBucket(String value);
+
+    @Description("Dead letter queue path")
+    String getDLQ();
+    void setDLQ(String value);
 
     @Description("Bucket path to collect pipeline errors in json files")
     String getBucket();
@@ -114,6 +124,8 @@ public class App {
         final int STORAGE_LOAD_INTERVAL = 1; // minutes
         final int STORAGE_NUM_SHARDS = 1;
 
+        final String ERRORS_BUCKET = String.format("gs://%s/%s/", options.getBucket(), options.getErrorsBucket());
+        final String ERRORS_QUEUE = String.format("projects/%s/topic/uc1-dlq-topic-8",options.getBQProject());
         final String BQ_PROJECT = options.getBQProject();
         final String BQ_DATASET = options.getBQDataset();
 
@@ -140,7 +152,7 @@ public class App {
                 .withMethod(BigQueryIO.Write.Method.STREAMING_INSERTS)
                 .withFailedInsertRetryPolicy(InsertRetryPolicy.retryTransientErrors()) //Retry all failures except for known persistent errors.
                 .withWriteDisposition(WRITE_APPEND)
-                .withCreateDisposition(CREATE_NEVER)
+                .withCreateDisposition(CREATE_IF_NEEDED)
                 .withExtendedErrorInfo() //- getFailedInsertsWithErr
                 .ignoreUnknownValues()
                 .skipInvalidRows()
@@ -153,7 +165,7 @@ public class App {
         
         // 5. Write rows that failed to GCS using windowing of STORAGE_LOAD_INTERVAL interval
         // Flatten failed rows after TransformToBQ with failed inserts
-
+//TODO Change to String
         PCollection<KV<String, String>> failedInserts = writeResult.getFailedInsertsWithErr()
                 .apply("MapFailedInserts", MapElements.via(new SimpleFunction<BigQueryInsertError, KV<String, String>>() {
                                                                @Override
@@ -172,26 +184,26 @@ public class App {
             }
         }));
 
-
+//TODO write to pubsub
         // 7. write all 'bad' data to ERRORS_BUCKET with STORAGE_LOAD_INTERVAL
-//        PCollectionList<KV<String, String>> allErrors = PCollectionList.of(results.get(FAILURE_TAG)).and(failedInserts);
-//        allErrors.apply(Flatten.<KV<String, String>>pCollections())
-//                .apply("Window Errors", Window.<KV<String, String>>into(new GlobalWindows())
-//                .triggering(Repeatedly
-//                        .forever(AfterProcessingTime
-//                                .pastFirstElementInPane()
-//                                .plusDelayOf(Duration.standardMinutes(STORAGE_LOAD_INTERVAL)))
-//                )
-//                .withAllowedLateness(Duration.standardDays(1))
-//                .discardingFiredPanes()
-//        )
-//                .apply("WriteErrorsToGCS", FileIO.<String, KV<String, String>>writeDynamic()
-//                        .withDestinationCoder(StringUtf8Coder.of())
-//                        .by(KV::getKey)
-//                        .via(Contextful.fn(KV::getValue), TextIO.sink())
-//                        .withNumShards(STORAGE_NUM_SHARDS)
-//                        .to(ERRORS_BUCKET)
-//                        .withNaming(ErrorFormatFileName::new));
+        PCollectionList<KV<String, String>> allErrors = PCollectionList.of(results.get(FAILURE_TAG)).and(failedInserts);
+        allErrors.apply(Flatten.<KV<String, String>>pCollections())
+                .apply("Window Errors", Window.<KV<String, String>>into(new GlobalWindows())
+                .triggering(Repeatedly
+                        .forever(AfterProcessingTime
+                                .pastFirstElementInPane()
+                                .plusDelayOf(Duration.standardMinutes(STORAGE_LOAD_INTERVAL)))
+                )
+                .withAllowedLateness(Duration.standardMinutes(1))
+                .discardingFiredPanes()
+        )
+                .apply("WriteErrorsToGCS", FileIO.<String, KV<String, String>>writeDynamic()
+                        .withDestinationCoder(StringUtf8Coder.of())
+                        .by(KV::getKey)
+                        .via(Contextful.fn(KV::getValue), TextIO.sink())
+                        .withNumShards(STORAGE_NUM_SHARDS)
+                        .to(ERRORS_QUEUE)
+                      );
 
 
         p.run();
