@@ -151,7 +151,7 @@ public class App {
                 .withMethod(BigQueryIO.Write.Method.STREAMING_INSERTS)
                 .withFailedInsertRetryPolicy(InsertRetryPolicy.retryTransientErrors()) //Retry all failures except for known persistent errors.
                 .withWriteDisposition(WRITE_APPEND)
-                .withCreateDisposition(CREATE_IF_NEEDED)
+                .withCreateDisposition(CREATE_NEVER)
                 .withExtendedErrorInfo() //- getFailedInsertsWithErr
                 .ignoreUnknownValues()
                 .skipInvalidRows()
