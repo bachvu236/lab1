@@ -26,8 +26,8 @@ public class TransformToBQ {
 
     static final TupleTag<TableRow> SUCCESS_TAG =
             new TupleTag<TableRow>(){};
-    static final TupleTag<KV<String, String>> FAILURE_TAG =
-            new TupleTag<KV<String, String>>(){};
+    static final TupleTag<String> FAILURE_TAG =
+            new TupleTag<String>(){};
 
     private static class JsonToTableRow
             extends PTransform<PCollection<String>, PCollectionTuple> {
@@ -49,7 +49,7 @@ public class TransformToBQ {
                             if (message_in_bytes.length >= 10 * 1024 * 1024) {
                                 log.error("Error: too big row of size {} bytes in type {}", message_in_bytes.length);
                                 Metric.tooBigMessages.inc();
-                                context.output(FAILURE_TAG, KV.of("TooBigRow", jsonString));
+                                context.output(FAILURE_TAG,  jsonString);
                             }
 
                             TableRow row;
@@ -63,7 +63,7 @@ public class TransformToBQ {
                              } catch (IOException e) {
                                 log.error("Error: {}", e.getMessage());
                                 Metric.jsonParseErrorMessages.inc();
-                                context.output(FAILURE_TAG, KV.of("JsonParseError", jsonString));
+                                context.output(FAILURE_TAG, jsonString);
                              }
                              
 

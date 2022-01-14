@@ -135,13 +135,7 @@ public class App {
         PCollection<String> pubsubMessages = p
                 .apply("ReadPubSubSubscription", PubsubIO.readStrings().fromSubscription(SUBSCRIPTION));
 
-        // 2. Count PubSub Data
-        pubsubMessages.apply("CountPubSubData", ParDo.of(new DoFn<String, String>() {
-                    @ProcessElement
-                    public void processElement(ProcessContext c)  {
-                        Metric.pubsubMessages.inc();
-                    }
-                }));
+
 
         // 3. Transform element to TableRow
         PCollectionTuple results = pubsubMessages.apply("TransformToBQ", TransformToBQ.run());
@@ -163,30 +157,10 @@ public class App {
                 })
         );
 
-        // 5. Write rows that failed to GCS using windowing of STORAGE_LOAD_INTERVAL interval
-        // Flatten failed rows after TransformToBQ with failed inserts
-        PCollection<KV<String, String>> failedInserts = writeResult.getFailedInsertsWithErr()
-                .apply("MapFailedInserts", MapElements.via(new SimpleFunction<BigQueryInsertError, KV<String, String>>() {
-                                                               @Override
-                                                               public KV<String, String> apply(BigQueryInsertError input) {
-                                                                   return KV.of("FailedInserts", input.getError().toString() + " for table" + input.getRow().get("table") + ", message: "+ input.getRow().toString());
-                                                               }
-                                                           }
-                ));
-
-        // 6. Count failed inserts
-        failedInserts.apply("LogFailedInserts", ParDo.of(new DoFn<KV<String, String>, Void>() {
-            @ProcessElement
-            public void processElement(ProcessContext c)  {
-                LOG.error("{}: {}", c.element().getKey(), c.element().getValue());
-                Metric.failedInsertMessages.inc();
-            }
-        }));
 
         // 7. write all 'bad' data to ERRORS_BUCKET with STORAGE_LOAD_INTERVAL
-        PCollectionList<KV<String, String>> allErrors = PCollectionList.of(results.get(FAILURE_TAG)).and(failedInserts);
-        allErrors.apply(Flatten.<KV<String, String>>pCollections())
-                .apply("Window Errors", Window.<KV<String, String>>into(new GlobalWindows())
+         results.get(FAILURE_TAG)
+                .apply("Window Errors", Window.<String>into(new GlobalWindows())
                 .triggering(Repeatedly
                         .forever(AfterProcessingTime
                                 .pastFirstElementInPane()
@@ -195,16 +169,8 @@ public class App {
                 .withAllowedLateness(Duration.standardMinutes(1))
                 .discardingFiredPanes()
         )
-                .apply("WriteErrorsToGCS", FileIO.<String, KV<String, String>>writeDynamic()
-                        .withDestinationCoder(StringUtf8Coder.of())
-                        .by(KV::getKey)
-                        .via(Contextful.fn(KV::getValue), TextIO.sink())
-                        .withNumShards(STORAGE_NUM_SHARDS)
-                        .to(ERRORS_BUCKET)
-                        .withNaming(ErrorFormatFileName::new));
-
+                .apply("Write to PubSub",PubsubIO.writeStrings().to(ERROR_QUEUE));
         p.run();
-
 
     }
 }
