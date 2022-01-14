@@ -35,20 +35,6 @@ public class App {
 
     void setBQDataset(String value);
 
-    @Description("Bucket path to collect pipeline errors in json files")
-
-    String getErrorsBucket();
-    void setErrorsBucket(String value);
-
-    @Description("Dead letter queue path")
-    String getDLQ();
-    void setDLQ(String value);
-
-    @Description("Bucket path to collect pipeline errors in json files")
-    String getBucket();
-
-    void setBucket(String value);
-
     @Description("Pubsub project")
     String getPubSubProject();
 
