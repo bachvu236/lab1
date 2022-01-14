@@ -200,7 +200,7 @@ public class App {
                         .by(KV::getKey)
                         .via(Contextful.fn(KV::getValue), TextIO.sink())
                         .withNumShards(STORAGE_NUM_SHARDS)
-                        .to(ERROR_QUEUE)
+                        .to(ERRORS_BUCKET)
                         .withNaming(ErrorFormatFileName::new));
 
         p.run();
