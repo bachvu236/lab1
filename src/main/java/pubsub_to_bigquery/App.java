@@ -124,7 +124,7 @@ public class App {
         final int STORAGE_LOAD_INTERVAL = 1; // minutes
         final int STORAGE_NUM_SHARDS = 1;
 
-        final String ERROR_QUEUE = String.format("projects/%s/subscriptions/%s", options.getPubSubProject(), options.getSubscription());
+        final String ERROR_QUEUE = String.format("projects/%s/topics/uc1-dlq-topic-8", options.getPubSubProject());
         final String ERRORS_BUCKET = String.format("gs://%s/%s/", options.getBucket(), options.getErrorsBucket());
         final String BQ_PROJECT = options.getBQProject();
         final String BQ_DATASET = options.getBQDataset();
@@ -165,7 +165,6 @@ public class App {
 
         // 5. Write rows that failed to GCS using windowing of STORAGE_LOAD_INTERVAL interval
         // Flatten failed rows after TransformToBQ with failed inserts
-//TODO Change to String
         PCollection<KV<String, String>> failedInserts = writeResult.getFailedInsertsWithErr()
                 .apply("MapFailedInserts", MapElements.via(new SimpleFunction<BigQueryInsertError, KV<String, String>>() {
                                                                @Override
@@ -184,7 +183,6 @@ public class App {
             }
         }));
 
-//TODO write to pubsub
         // 7. write all 'bad' data to ERRORS_BUCKET with STORAGE_LOAD_INTERVAL
         PCollectionList<KV<String, String>> allErrors = PCollectionList.of(results.get(FAILURE_TAG)).and(failedInserts);
         allErrors.apply(Flatten.<KV<String, String>>pCollections())
@@ -202,7 +200,7 @@ public class App {
                         .by(KV::getKey)
                         .via(Contextful.fn(KV::getValue), TextIO.sink())
                         .withNumShards(STORAGE_NUM_SHARDS)
-                        .to(ERRORS_BUCKET)
+                        .to(ERROR_QUEUE)
                         .withNaming(ErrorFormatFileName::new));
 
         p.run();
